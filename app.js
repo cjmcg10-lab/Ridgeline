@@ -60,6 +60,46 @@ const mountains = [
   ['Blue Knob',40.30,-78.56,631,960,'PA'],
   ['Mohawk Mountain',41.84,-73.31,290,488,'CT'],
   ['Ski Sundown',41.88,-72.95,137,328,'CT'],
+  ["Bear Creek", 40.48135, -75.64966, 206, 350, "PA"],
+  ["Big Moose", 45.50726, -69.70192, 404, 580, "ME"],
+  ["Big Rock Mountain", 46.52237, -67.83536, 201, 487, "ME"],
+  ["Buffalo Ski Club", 42.68146, -78.69414, 308, 452, "NY"],
+  ["Cazenovia Ski Club", 42.97673, -75.85829, 290, 436, "NY"],
+  ["Dartmouth Skiway", 43.78775, -72.10212, 280, 580, "NH"],
+  ["Dry Hill Ski Area", 43.93144, -75.90188, 214, 301, "NY"],
+  ["Hunt Hollow Ski Club", 42.646, -77.48068, 345, 592, "NY"],
+  ["Lost Valley", 44.13607, -70.28553, 77, 148, "ME"],
+  ["Maple Ski Ridge", 42.81707, -74.03717, 163, 246, "NY"],
+  ["McIntyre Ski Area", 43.00755, -71.44382, 107, 156, "NH"],
+  ["Mt. Pisgah", 44.34561, -74.12827, 540, 624, "NY"],
+  ["Peek ‘n Peak", 42.06233, -79.73812, 431, 535, "NY"],
+  ["Powder Ridge", 41.50165, -72.73903, 117, 243, "CT"],
+  ["Shawnee Mountain Ski Area", 41.03977, -75.0848, 145, 349, "PA"],
+  ["Skaneateles Ski Club", 42.91535, -76.33378, 244, 338, "NY"],
+  ["Ski Big Bear", 41.5233, -75.0278, 214, 391, "PA"],
+  ["Ski Sawmill", 41.52099, -77.29256, 513, 622, "PA"],
+  ["Snow Ridge", 43.63975, -75.42499, 398, 538, "NY"],
+  ["Spring Mountain Adventures", 40.27255, -75.45268, 51, 154, "PA"],
+  ["Swain Resort", 42.4766, -77.85771, 402, 568, "NY"],
+  ["Tenney Mountain", 43.74709, -71.76459, 225, 653, "NH"],
+  ["Tussey Mountain", 40.7692, -77.75651, 403, 552, "PA"],
+  ["Veterans Memorial Recreation Area", 43.44506, -71.69466, 236, 306, "NH"],
+  ["Whaleback Mountain", 43.60171, -72.18285, 348, 544, "NH"],
+  ["Winter4Kids", 41.18714, -74.48412, 267, 435, "NJ"],
+  ["Yawgoo Valley Ski Area", 41.51731, -71.52999, 34, 91, "RI"],
+  ["Ski Ward", 42.30028, -71.68132, 106, 162, "MA"],
+  ["Mount Peter", 41.24643, -74.29318, 243, 324, "NY"],
+  ["Thunder Ridge", 41.50782, -73.58019, 147, 267, "NY"],
+  ["Nashoba Valley Ski Area", 42.54209, -71.45008, 60, 129, "MA"],
+  ["Lakeridge", 41.87386, -73.10227, 316, 362, "CT"],
+  ["Otis Ridge", 42.19501, -73.10095, 377, 474, "MA"],
+  ["Victor Constant Ski Area", 41.39295, -73.98195, 143, 296, "NY"],
+  ["Rocking Horse Ranch", 41.6907, -74.01581, 172, 192, "NY"],
+  ["Holiday Mountain", 41.62522, -74.60813, 324, 437, "NY"],
+  ["Brattleboro Ski Hill", 42.8466, -72.5859, 130, 179, "VT"],
+  ["Campgaw Mountain Ski Area", 41.05912, -74.19815, 146, 220, "NJ"],
+  ["Easton Ski Area", 42.53833, -72.59314, 101, 235, "MA"],
+  ["Mount Southington Ski Area", 41.58137, -72.92924, 62, 171, "CT"],
   ['Vail',39.64,-106.37,2475,3527],['Breckenridge',39.48,-106.07,2926,3962],
   ['Copper Mountain',39.50,-106.15,2960,3753],['Keystone',39.60,-105.95,2829,3782],
   ['Winter Park',39.88,-105.76,2743,3676],['Steamboat',40.46,-106.80,2103,3221]
@@ -223,38 +263,279 @@ async function render(){
   byId('status').textContent=failures?'Some forecasts could not load. ':'Select a daily score to explore its hourly forecast.';
   if(failures){const retry=document.createElement('button');retry.textContent='Retry';retry.onclick=render;byId('status').append(retry);}
 }
-const states={VT:'Vermont',ME:'Maine',NH:'New Hampshire',NY:'New York',MA:'Massachusetts',PA:'Pennsylvania',CT:'Connecticut',CO:'Colorado'};
+const states={VT:'Vermont',ME:'Maine',NH:'New Hampshire',NY:'New York',MA:'Massachusetts',PA:'Pennsylvania',CT:'Connecticut',NJ:'New Jersey',RI:'Rhode Island',CO:'Colorado'};
+const catalogInfo={
+  "Jiminy Peak": {"minutes":149},
+  "Bear Creek": {
+    "pass": "Indy Pass"
+  },
+  "Belleayre": {
+    "pass": "Indy Allied"
+  },
+  "Berkshire East": {
+    "pass": "Indy Pass",
+    "minutes": 134
+  },
+  "Big Moose": {
+    "pass": "Indy Pass"
+  },
+  "Big Rock Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Black Mountain of Maine": {
+    "pass": "Indy Pass"
+  },
+  "Black Mountain of New Hampshire": {
+    "pass": "Indy Pass"
+  },
+  "Blue Knob": {
+    "pass": "Indy Pass"
+  },
+  "Bolton Valley": {
+    "pass": "Indy Pass"
+  },
+  "Bousquet Mountain": {
+    "pass": "Indy Pass",
+    "minutes": 123
+  },
+  "Buffalo Ski Club": {
+    "pass": "Indy Pass"
+  },
+  "Burke Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Camden Snow Bowl": {
+    "pass": "Indy Pass"
+  },
+  "Cannon Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Catamount": {
+    "pass": "Indy Pass",
+    "minutes": 101
+  },
+  "Cazenovia Ski Club": {
+    "pass": "Indy Pass"
+  },
+  "Dartmouth Skiway": {
+    "pass": "Indy Pass"
+  },
+  "Dry Hill Ski Area": {
+    "pass": "Indy Pass"
+  },
+  "Gore Mountain": {
+    "pass": "Indy Allied"
+  },
+  "Greek Peak": {
+    "pass": "Indy Pass"
+  },
+  "Hunt Hollow Ski Club": {
+    "pass": "Indy Pass"
+  },
+  "Jay Peak": {
+    "pass": "Indy Pass"
+  },
+  "King Pine": {
+    "pass": "Indy Pass"
+  },
+  "Lost Valley": {
+    "pass": "Indy Pass"
+  },
+  "Magic Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Maple Ski Ridge": {
+    "pass": "Indy Pass"
+  },
+  "McIntyre Ski Area": {
+    "pass": "Indy Pass"
+  },
+  "Middlebury Snowbowl": {
+    "pass": "Indy Pass"
+  },
+  "Mohawk Mountain": {
+    "pass": "Indy Pass",
+    "minutes": 59
+  },
+  "Montage Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Mt Abram": {
+    "pass": "Indy Pass"
+  },
+  "Mt. Pisgah": {
+    "pass": "Indy Pass"
+  },
+  "Pats Peak": {
+    "pass": "Indy Pass"
+  },
+  "Peek ‘n Peak": {
+    "pass": "Indy Pass"
+  },
+  "Powder Ridge": {
+    "pass": "Indy Pass",
+    "minutes": 26
+  },
+  "Ragged Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Saddleback": {
+    "pass": "Indy Pass"
+  },
+  "Saskadena Six": {
+    "pass": "Indy Pass"
+  },
+  "Shawnee Mountain Ski Area": {
+    "pass": "Indy Pass"
+  },
+  "Skaneateles Ski Club": {
+    "pass": "Indy Pass"
+  },
+  "Ski Big Bear": {
+    "pass": "Indy Pass"
+  },
+  "Ski Sawmill": {
+    "pass": "Indy Pass"
+  },
+  "Smugglers’ Notch": {
+    "pass": "Indy Pass"
+  },
+  "Snow Ridge": {
+    "pass": "Indy Pass"
+  },
+  "Spring Mountain Adventures": {
+    "pass": "Indy Pass"
+  },
+  "Swain Resort": {
+    "pass": "Indy Pass"
+  },
+  "Tenney Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Titus Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Tussey Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Veterans Memorial Recreation Area": {
+    "pass": "Indy Pass"
+  },
+  "Waterville Valley": {
+    "pass": "Indy Pass"
+  },
+  "West Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Whaleback Mountain": {
+    "pass": "Indy Pass"
+  },
+  "Whiteface": {
+    "pass": "Indy Allied"
+  },
+  "Winter4Kids": {
+    "pass": "Indy Pass"
+  },
+  "Yawgoo Valley Ski Area": {
+    "minutes": 125
+  },
+  "Ski Ward": {
+    "minutes": 116
+  },
+  "Mount Peter": {
+    "minutes": 148
+  },
+  "Thunder Ridge": {
+    "minutes": 79
+  },
+  "Wachusett Mountain": {
+    "minutes": 134
+  },
+  "Nashoba Valley Ski Area": {
+    "minutes": 145
+  },
+  "Ski Butternut": {
+    "minutes": 98
+  },
+  "Lakeridge": {
+    "minutes": 49
+  },
+  "Otis Ridge": {
+    "minutes": 88
+  },
+  "Ski Sundown": {
+    "minutes": 44
+  },
+  "Victor Constant Ski Area": {
+    "minutes": 123
+  },
+  "Rocking Horse Ranch": {
+    "minutes": 121
+  },
+  "Holiday Mountain": {
+    "minutes": 149
+  },
+  "Brattleboro Ski Hill": {
+    "minutes": 130
+  },
+  "Campgaw Mountain Ski Area": {
+    "minutes": 148
+  },
+  "Easton Ski Area": {
+    "minutes": 106
+  },
+  "Mount Southington Ski Area": {
+    "minutes": 9
+  }
+};
 const picker=byId('picker');
 const summary=picker.parentElement.querySelector('summary');
 function updateCount(){
   summary.textContent='Compare mountains ('+selected.size+')';
 }
-for(const [code,state] of Object.entries(states)){
-  const group=document.createElement('details');
-  const heading=document.createElement('summary');
-  heading.textContent=state;
-  group.append(heading);
-  const resorts=mountains.filter(m=>(m[5] || 'CO')===code)
-    .sort((a,b)=>a[0].localeCompare(b[0]));
-  for(const [name] of resorts){
-    const label=document.createElement('label');
-    const box=document.createElement('input');
-    box.type='checkbox';
-    box.checked=selected.has(name);
-    box.onchange=()=>{
-      if(box.checked) selected.add(name);
-      else selected.delete(name);
-      const url=new URL(location.href);
-      url.searchParams.set('mountains',[...selected].join(','));
-      history.replaceState(null,'',url);
-      updateCount();
-      render();
-    };
-    label.append(box,' '+name);
-    group.append(label);
-  }
-  picker.append(group);
+const filter=document.createElement('select');
+filter.setAttribute('aria-label','Mountain list');
+for(const [value,title] of [['all','All mountains'],['pass','Northeast Indy partners'],['minutes','Within 2½ hours of Southington']]){
+  filter.add(new Option(title,value));
 }
+picker.append(filter);
+const stateLists=document.createElement('div');
+picker.append(stateLists);
+function listMountains(){
+stateLists.replaceChildren();
+  for(const [code,state] of Object.entries(states)){
+    const group=document.createElement('details');
+    const heading=document.createElement('summary');
+    heading.textContent=state;
+    group.append(heading);
+    const resorts=mountains.filter(m=>(m[5] || 'CO')===code && (filter.value==='all' || catalogInfo[m[0]]?.[filter.value]))
+      .sort((a,b)=>a[0].localeCompare(b[0]));
+    if(!resorts.length) continue;
+    group.open=filter.value!=='all';
+    for(const [name] of resorts){
+      const label=document.createElement('label');
+      const box=document.createElement('input');
+      box.type='checkbox';
+      box.checked=selected.has(name);
+      box.onchange=()=>{
+        if(box.checked) selected.add(name);
+        else selected.delete(name);
+        const url=new URL(location.href);
+        url.searchParams.set('mountains',[...selected].join(','));
+        history.replaceState(null,'',url);
+        updateCount();
+        render();
+      };
+      const info=catalogInfo[name] || {};
+      const details=[info.pass,info.minutes && ('~'+info.minutes+' min')].filter(Boolean);
+      label.append(box,' '+[name,...details].join(' · '));
+      group.append(label);
+    }
+    stateLists.append(group);
+  }
+}
+filter.onchange=listMountains;
+listMountains();
 updateCount();
 byId('share').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);byId('share').textContent='Link copied ✓';}catch{prompt('Copy your outlook link',location.href);}};
 render();
