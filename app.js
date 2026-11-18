@@ -1,5 +1,35 @@
 // Coordinates and approximate resort elevations in metres.
 const mountains = [
+  ['Killington',43.63,-72.80,355,1293,'VT'],
+  ['Stowe',44.53,-72.78,390,1108,'VT'],
+  ['Sugarloaf',45.03,-70.31,432,1291,'ME'],
+  ['Jay Peak',44.94,-72.51,553,1209,'VT'],
+  ['Sugarbush',44.14,-72.89,451,1244,'VT'],
+  ['Okemo',43.40,-72.72,348,1019,'VT'],
+  ['Stratton',43.11,-72.91,571,1180,'VT'],
+  ['Mount Snow',42.96,-72.92,579,1097,'VT'],
+  ["Smugglers’ Notch",44.59,-72.79,314,1109,'VT'],
+  ['Mad River Glen',44.20,-72.92,488,1109,'VT'],
+  ['Bolton Valley',44.42,-72.85,440,960,'VT'],
+  ['Bromley',43.21,-72.94,594,1000,'VT'],
+  ['Cannon Mountain',44.16,-71.70,579,1244,'NH'],
+  ['Loon Mountain',44.04,-71.63,290,930,'NH'],
+  ['Bretton Woods',44.26,-71.44,488,945,'NH'],
+  ['Wildcat Mountain',44.26,-71.24,594,1238,'NH'],
+  ['Attitash',44.08,-71.23,183,716,'NH'],
+  ['Waterville Valley',43.95,-71.50,604,1220,'NH'],
+  ['Mount Sunapee',43.33,-72.08,375,836,'NH'],
+  ['Sunday River',44.47,-70.86,244,959,'ME'],
+  ['Saddleback',44.95,-70.53,750,1256,'ME'],
+  ['Whiteface',44.35,-73.86,372,1338,'NY'],
+  ['Gore Mountain',43.67,-74.01,305,1097,'NY'],
+  ['Belleayre',42.14,-74.50,617,1044,'NY'],
+  ['Hunter Mountain',42.20,-74.23,488,975,'NY'],
+  ['Holiday Valley',42.26,-78.67,457,686,'NY'],
+  ['Jiminy Peak',42.56,-73.29,381,724,'MA'],
+  ['Wachusett Mountain',42.50,-71.89,305,611,'MA'],
+  ['Blue Mountain',40.81,-75.52,140,470,'PA'],
+  ['Elk Mountain',41.72,-75.56,516,821,'PA'],
   ['Vail',39.64,-106.37,2475,3527],['Breckenridge',39.48,-106.07,2926,3962],
   ['Copper Mountain',39.50,-106.15,2960,3753],['Keystone',39.60,-105.95,2829,3782],
   ['Winter Park',39.88,-105.76,2743,3676],['Steamboat',40.46,-106.80,2103,3221]
@@ -10,13 +40,13 @@ const selected = new Set(mountains.map(m=>m[0]).filter((name,i)=>requested===nul
 const fields = ['temperature_2m_max','temperature_2m_min','snowfall_sum','rain_sum','wind_gusts_10m_max'];
 const hourlyFields = ['temperature_2m','snowfall','rain','wind_gusts_10m'];
 const cache = new Map();
-const zone = 'America/Denver';
+const zone = 'America/New_York';
 const today = new Intl.DateTimeFormat('en-CA',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const dates = Array.from({length:16},(_,i)=>{
   const d=new Date(today+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+i); return d.toISOString().slice(0,10);
 });
 async function forecast(m){
-  const params=new URLSearchParams({latitude:[m[1],m[1]],longitude:[m[2],m[2]],elevation:m.slice(3),daily:fields,hourly:hourlyFields,timezone:zone,start_date:dates[0],end_date:dates.at(-1)});
+  const params=new URLSearchParams({latitude:[m[1],m[1]],longitude:[m[2],m[2]],elevation:m.slice(3,5),daily:fields,hourly:hourlyFields,timezone:m[5]?zone:'America/Denver',start_date:dates[0],end_date:dates.at(-1)});
   const res=await fetch('https://api.open-meteo.com/v1/forecast?'+params,{signal:AbortSignal.timeout(18000)});
   if(!res.ok) throw Error('Forecast unavailable');
   const data=await res.json();
@@ -99,7 +129,7 @@ async function render(){
       btn.onclick=()=>{
         const dialog=byId('detail');dialog.querySelector('h2').textContent=m[0]+' · '+(l?'Summit':'Base');
         const [high,low,snow,rain,gust]=values;
-        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+low+' to '+high+' °C, '+snow+' cm of snowfall, '+rain+' mm of rain and peak gusts of '+gust+' km/h.';showHours(data[l].hourly,date,i);dialog.showModal();dialog.scrollTop=0;
+        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+low+' to '+high+' °C, '+snow+' cm of snowfall, '+rain+' mm of rain and peak gusts of '+gust+' km/h.';dialog.querySelector('h3').textContent='Hourly outlook · '+(m[5]?'Eastern':'Mountain')+' time';showHours(data[l].hourly,date,i);dialog.showModal();dialog.scrollTop=0;
       };cell.append(btn);
     }));
   }));
@@ -107,11 +137,54 @@ async function render(){
   byId('status').textContent=failures?'Some forecasts could not load. ':'Select a daily score to explore its hourly forecast.';
   if(failures){const retry=document.createElement('button');retry.textContent='Retry';retry.onclick=render;byId('status').append(retry);}
 }
-for(const [name] of mountains){
-  const label=document.createElement('label'),box=document.createElement('input');box.type='checkbox';box.checked=selected.has(name);
-  box.onchange=()=>{if(box.checked)selected.add(name);else selected.delete(name);
-    const url=new URL(location.href);url.searchParams.set('mountains',[...selected].join(','));history.replaceState(null,'',url);render();};
-  label.append(box,' '+name);byId('picker').append(label);
+const states={VT:'Vermont',ME:'Maine',NH:'New Hampshire',NY:'New York',MA:'Massachusetts',PA:'Pennsylvania',CO:'Colorado'};
+const picker=byId('picker');
+const search=document.createElement('input');
+search.type='search';
+search.placeholder='Mountain or state';
+search.setAttribute('aria-label','Find a mountain by name or state');
+const results=document.createElement('div');
+const shortlist=document.createElement('div');
+picker.append(search,results,shortlist);
+function toggleMountain(name){
+  if(selected.has(name)) selected.delete(name);
+  else selected.add(name);
+  const url=new URL(location.href);
+  url.searchParams.set('mountains',[...selected].join(','));
+  history.replaceState(null,'',url);
+  search.value='';
+  updatePicker();
+  search.focus();
+  render();
 }
+function choice(name,label){
+  const button=document.createElement('button');
+  button.type='button';
+  button.textContent=label;
+  button.style.margin='3px';
+  button.onclick=()=>toggleMountain(name);
+  return button;
+}
+function updatePicker(limit=6){
+  picker.parentElement.querySelector('summary').textContent='Compare mountains ('+selected.size+')';
+  shortlist.replaceChildren();
+  results.replaceChildren();
+  for(const name of selected) shortlist.append(choice(name,'Remove '+name+' ×'));
+  const normalize=value=>value.toLowerCase().replace(/[’']/g,'');
+  const query=normalize(search.value.trim());
+  if(!query)return;
+  const matches=mountains.filter(([name,,,,,state='CO'])=>
+    !selected.has(name) && normalize(name+' '+state+' '+states[state]).includes(query));
+  for(const [name,,,,,state='CO'] of matches.slice(0,limit)) results.append(choice(name,'+ '+name+' · '+state));
+  if(!matches.length) results.textContent='No additional mountains match.';
+  if(matches.length>limit){
+    const more=document.createElement('button');
+    more.textContent='Show more matches';
+    more.onclick=()=>updatePicker(limit+6);
+    results.append(more);
+  }
+}
+search.oninput=()=>updatePicker();
+updatePicker();
 byId('share').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);byId('share').textContent='Link copied ✓';}catch{prompt('Copy your outlook link',location.href);}};
 render();
