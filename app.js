@@ -119,16 +119,63 @@ async function forecast(m){
   const start=new Date(dates[0]+"T12:00:00Z");
   start.setUTCDate(start.getUTCDate()-15);
   const params=new URLSearchParams({latitude:[m[1],m[1]],longitude:[m[2],m[2]],elevation:m.slice(3,5),daily:fields,hourly:[...hourlyFields,"visibility"],timezone:m[5]?zone:'America/Denver',start_date:start.toISOString().slice(0,10),end_date:dates.at(-1)});
-  const res=await fetch('https://api.open-meteo.com/v1/forecast?'+params,{signal:AbortSignal.timeout(18000)});
-  if(!res.ok) throw Error('Forecast unavailable');
-  const data=await res.json();
+  const ensembleParams=new URLSearchParams(params);
+  for(const key of ['daily','start_date','end_date']) ensembleParams.delete(key);
+  ensembleParams.set('hourly','temperature_2m,snowfall,rain');
+  ensembleParams.set('models','icon_seamless');
+  ensembleParams.set('forecast_days','7');
+  async function read(url,timeout){
+    const response=await fetch(url,{signal:AbortSignal.timeout(timeout)});
+    if(!response.ok) throw Error('Forecast unavailable');
+    return response.json();
+  }
+  const [data,ensemble,report]=await Promise.all([
+    read('https://api.open-meteo.com/v1/forecast?'+params,18000),
+    read('https://ensemble-api.open-meteo.com/v1/ensemble?'+ensembleParams,10000).catch(()=>null),
+    read('/api/surface?mountain='+encodeURIComponent(m[0]),8000).catch(()=>null)
+  ]);
   if(!Array.isArray(data)||data.length!==2) throw Error('Incomplete forecast');
-  return data.map(elevation=>({...elevation, quality:scoreTimeline(elevation.hourly)}));
+  return data.map((elevation,i)=>{
+    const hourly=elevation.hourly;
+    const observation=surfaceObservation(report,m[5]?zone:'America/Denver');
+    const quality=scoreTimeline(hourly,observation);
+    const scenarios=scenarioDays(hourly,ensemble?.[i]?.hourly,observation);
+    return {...elevation,quality,scenarios,observation,report};
+  });
+}
+function surfaceObservation(report,timezone){
+  if(!report?.surface || !Number.isFinite(report.timestamp)) return null;
+  const age=Date.now()-report.timestamp;
+  if(age<0 || age>24*3600000) return null;
+  const states={
+    'snow groomed':[0,0,0], 'packed powder':[2,0,0], 'powder':[12,0,0],
+    'frozen granular':[0,0,6], 'icy':[0,0,8], 'wet granular':[0,7,0]
+  };
+  const state=states[report.surface.toLowerCase()];
+  if(!Array.isArray(state)) return null;
+  const parts=new Intl.DateTimeFormat('en-CA',{timeZone:timezone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',hourCycle:'h23'}).formatToParts(report.timestamp);
+  const t=Object.fromEntries(parts.map(x=>[x.type,x.value]));
+  return {time:t.year+'-'+t.month+'-'+t.day+'T'+t.hour+':00',state};
+}
+function scenarioDays(base,ensemble,observation){
+  if(!ensemble?.time?.length) return [];
+  const offset=base.time.indexOf(ensemble.time[0]);
+  if(offset<0 || !ensemble.time.every((t,i)=>base.time[offset+i]===t)) return [];
+  const days=[];
+  for(const key of Object.keys(ensemble).filter(k=>/^temperature_2m_member\d+$/.test(k))){
+    const suffix=key.slice('temperature_2m'.length);
+    const scenario={...base,time:base.time.slice(0,offset+ensemble.time.length)};
+    for(const field of ['temperature_2m','snowfall','rain']){
+      scenario[field]=base[field].slice(0,offset).concat(ensemble[field+suffix] || []);
+    }
+    days.push(scoreTimeline(scenario,observation).days);
+  }
+  return days;
 }
 function category(score){
   return score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Mixed' : 'Poor';
 }
-function scoreTimeline(hourly){
+function scoreTimeline(hourly,observation){
   const hours=[];
   const skiDays=new Map();
   let softSnow=0, wetness=0, crust=0, validHours=0;
@@ -150,6 +197,7 @@ function scoreTimeline(hourly){
     const freeze=temp<0 ? wetness*Math.min(0.5,-temp*0.05) : 0;
     wetness-=freeze;
     crust=Math.max(0,Math.min(20,crust*0.997 + freeze - thaw*0.12));
+    if(time===observation?.time) [softSnow,wetness,crust]=observation.state;
     validHours++;
     if(validHours<=14*24) continue;
     const visibility=hourly.visibility?.[i];
@@ -185,10 +233,28 @@ function scoreTimeline(hourly){
   }
   return {hours,days,windows};
 }
-function dayConfidence([high,low,snow,rain],day){
-  const uncertainty=day>=5?2:1;
-  const confidence=day>=10?'Very low':['High','Medium','Low'][Math.min(2,uncertainty+Number(high>=-1 && high<=2 && rain+snow>0))];
-  return confidence;
+function dayConfidence(elevation,date,day,score){
+  const scores=elevation.scenarios.map(s=>s.get(date)).filter(Number.isFinite);
+  const matches=scores.filter(s=>category(s)===category(score)).length;
+  const enough=scores.length>=10;
+  const strong=enough && matches/scores.length>=0.8;
+  const split=enough && matches/scores.length<0.6;
+  const {report,observation,hourly}=elevation;
+  const start=hourly.time.indexOf(observation?.time);
+  const end=hourly.time.indexOf(date+'T15:00');
+  let stable=start>=0 && end>=start && end-start<=24;
+  for(let i=start+1;stable && i<=end;i++){
+    const t=hourly.temperature_2m[i],previous=hourly.temperature_2m[i-1];
+    stable=[t,previous,hourly.rain[i],hourly.snowfall[i]].every(Number.isFinite)
+      && hourly.rain[i]===0 && hourly.snowfall[i]===0 && (t>0)===(previous>0) && t<=3;
+  }
+  const nearFreeze=elevation.daily.time.indexOf(date);
+  const high=elevation.daily.temperature_2m_max[nearFreeze];
+  const marginal=high>=-1 && high<=2 && elevation.daily.snowfall_sum[nearFreeze]+elevation.daily.rain_sum[nearFreeze]>0;
+  const label=day>=10?'Very low':day>=5 || split || marginal?'Low':strong && stable && day<=1?'High':'Medium';
+  const agreement=enough?matches+' of '+scores.length+' ICON ensemble members predict '+category(score)+'.':'Insufficient ensemble coverage for this date.';
+  const surface=report?.surface?'Resort-wide report: '+report.surface+' ('+new Date(report.timestamp).toLocaleString('en-US',{timeZoneName:'short'})+'). '+(stable?'Recent and consistent with subsequent weather.':'Limited relevance for this ski day.'):'No verified surface description available.';
+  return {label,reason:agreement+' '+surface};
 }
 // Open-Meteo inputs and the scoring model use metric units. Convert for display.
 const fahrenheit = celsius => Math.round(celsius * 9 / 5 + 32) + ' °F';
@@ -245,8 +311,9 @@ async function render(){
     });
     let data;
     try{
-      if(!cache.has(m[0])) cache.set(m[0],forecast(m));
-      data=await cache.get(m[0]);
+      const cached=cache.get(m[0]);
+      if(!cached || Date.now()-cached.at>900000) cache.set(m[0],{at:Date.now(),result:forecast(m)});
+      data=await cache.get(m[0]).result;
     }catch{cache.delete(m[0]);failures++;}
     rows.forEach((row,l)=>dates.forEach((date,i)=>{
       const cell=row.insertCell(), daily=data?.[l]?.daily;
@@ -254,7 +321,7 @@ async function render(){
       const values=fields.map(f=>daily?.[f]?.[index]);
       const score=data?.[l]?.quality.days.get(date);
       if(!Number.isFinite(score) || !values.every(Number.isFinite)){cell.textContent='Unavailable';return;}
-      const rating=category(score), confidence=dayConfidence(values,i);
+      const rating=category(score), {label:confidence,reason}=dayConfidence(data[l],date,i,score);
       const btn=document.createElement('button');btn.textContent=score+'/100';
       btn.className=rating.toLowerCase();
       const label=document.createElement('small');label.textContent=rating;btn.append(label);
@@ -262,7 +329,7 @@ async function render(){
       btn.onclick=()=>{
         const dialog=byId('detail');dialog.querySelector('h2').textContent=m[0]+' · '+(l?'Summit':'Base');
         const [high,low,snow,rain,gust]=values;
-        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+fahrenheit(low)+' to '+fahrenheit(high)+', '+snowInches(snow)+' of snowfall, '+rainInches(rain)+' of rain and peak gusts of '+mph(gust)+'. Each hour uses at least 14 days of modeled snow history at this elevation. This daily score averages the seven scores from 9 am through 3 pm local time. Best three-hour window: '+data[l].quality.windows.get(date)+' local time.';dialog.querySelector('h3').textContent='Hourly outlook · '+(m[5]?'Eastern':'Mountain')+' time';showHours(data[l].hourly,date,data[l].quality.hours);dialog.showModal();dialog.scrollTop=0;
+        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+reason+' '+fahrenheit(low)+' to '+fahrenheit(high)+', '+snowInches(snow)+' of snowfall, '+rainInches(rain)+' of rain and peak gusts of '+mph(gust)+'. Each hour uses at least 14 days of modeled snow history at this elevation. This daily score averages the seven scores from 9 am through 3 pm local time. Best three-hour window: '+data[l].quality.windows.get(date)+' local time.';dialog.querySelector('h3').textContent='Hourly outlook · '+(m[5]?'Eastern':'Mountain')+' time';showHours(data[l].hourly,date,data[l].quality.hours);const reportLink=byId('report-source');reportLink.hidden=!data[l].report?.source;if(!reportLink.hidden) reportLink.href=data[l].report.source;dialog.showModal();dialog.scrollTop=0;
       };cell.append(btn);
     }));
   }));
