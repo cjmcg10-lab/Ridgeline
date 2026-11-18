@@ -190,6 +190,13 @@ function dayConfidence([high,low,snow,rain],day){
   const confidence=day>=10?'Very low':['High','Medium','Low'][Math.min(2,uncertainty+Number(high>=-1 && high<=2 && rain+snow>0))];
   return confidence;
 }
+// Open-Meteo inputs and the scoring model use metric units. Convert for display.
+const fahrenheit = celsius => Math.round(celsius * 9 / 5 + 32) + ' °F';
+const mph = kmh => Math.round(kmh / 1.609344) + ' mph';
+const snowInches = cm => (cm / 2.54).toFixed(1) + ' in';
+const rainInches = mm => (mm / 25.4).toFixed(2) + ' in';
+const feet = meters => Math.round(meters / 0.3048).toLocaleString('en-US') + ' ft';
+
 function showHours(hourly, date, scores){
   const list = byId('hours');
   list.replaceChildren();
@@ -207,7 +214,7 @@ function showHours(hourly, date, scores){
       badge.className = rating.toLowerCase();
       badge.textContent = score + '/100 · ' + rating;
       const weather = document.createElement('small');
-      weather.textContent = temp + ' °C · Snow ' + snow + ' cm · Rain ' + rain + ' mm · Gusts ' + gust + ' km/h';
+      weather.textContent = fahrenheit(temp) + ' · Snow ' + snowInches(snow) + ' · Rain ' + rainInches(rain) + ' · Gusts ' + mph(gust);
       row.append(badge,weather);
     } else {
       row.append('Unavailable');
@@ -234,7 +241,7 @@ async function render(){
   await Promise.all(mountains.filter(m=>selected.has(m[0])).map(async m=>{
     const rows=['Base','Summit'].map((level,l)=>{
       const row=body.insertRow();const th=document.createElement('th');th.textContent=m[0];
-      const small=document.createElement('small');small.textContent=level+' · '+m[3+l].toLocaleString()+' m';th.append(small);row.append(th);return row;
+      const small=document.createElement('small');small.textContent=level+' · '+feet(m[3+l]);th.append(small);row.append(th);return row;
     });
     let data;
     try{
@@ -255,7 +262,7 @@ async function render(){
       btn.onclick=()=>{
         const dialog=byId('detail');dialog.querySelector('h2').textContent=m[0]+' · '+(l?'Summit':'Base');
         const [high,low,snow,rain,gust]=values;
-        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+low+' to '+high+' °C, '+snow+' cm of snowfall, '+rain+' mm of rain and peak gusts of '+gust+' km/h. Each hour uses at least 14 days of modeled snow history at this elevation. This daily score averages the seven scores from 9 am through 3 pm local time. Best three-hour window: '+data[l].quality.windows.get(date)+' local time.';dialog.querySelector('h3').textContent='Hourly outlook · '+(m[5]?'Eastern':'Mountain')+' time';showHours(data[l].hourly,date,data[l].quality.hours);dialog.showModal();dialog.scrollTop=0;
+        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+fahrenheit(low)+' to '+fahrenheit(high)+', '+snowInches(snow)+' of snowfall, '+rainInches(rain)+' of rain and peak gusts of '+mph(gust)+'. Each hour uses at least 14 days of modeled snow history at this elevation. This daily score averages the seven scores from 9 am through 3 pm local time. Best three-hour window: '+data[l].quality.windows.get(date)+' local time.';dialog.querySelector('h3').textContent='Hourly outlook · '+(m[5]?'Eastern':'Mountain')+' time';showHours(data[l].hourly,date,data[l].quality.hours);dialog.showModal();dialog.scrollTop=0;
       };cell.append(btn);
     }));
   }));
