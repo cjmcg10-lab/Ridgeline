@@ -46,26 +46,62 @@ const dates = Array.from({length:16},(_,i)=>{
   const d=new Date(today+'T12:00:00Z'); d.setUTCDate(d.getUTCDate()+i); return d.toISOString().slice(0,10);
 });
 async function forecast(m){
-  const params=new URLSearchParams({latitude:[m[1],m[1]],longitude:[m[2],m[2]],elevation:m.slice(3,5),daily:fields,hourly:hourlyFields,timezone:m[5]?zone:'America/Denver',start_date:dates[0],end_date:dates.at(-1)});
+  const start=new Date(dates[0]+"T12:00:00Z");
+  start.setUTCDate(start.getUTCDate()-14);
+  const params=new URLSearchParams({latitude:[m[1],m[1]],longitude:[m[2],m[2]],elevation:m.slice(3,5),daily:fields,hourly:[...hourlyFields,"snow_depth"],timezone:m[5]?zone:'America/Denver',start_date:start.toISOString().slice(0,10),end_date:dates.at(-1)});
   const res=await fetch('https://api.open-meteo.com/v1/forecast?'+params,{signal:AbortSignal.timeout(18000)});
   if(!res.ok) throw Error('Forecast unavailable');
   const data=await res.json();
   if(!Array.isArray(data)||data.length!==2) throw Error('Incomplete forecast');
-  return data;
+  return data.map(elevation=>({...elevation, quality:scoreTimeline(elevation.hourly)}));
 }
-function rate([high,low,snow,rain,gust],day){
-  const freshSnowBonus = Math.min(26, snow * 2);
-  const windPenalty = Math.max(0, gust - 25) * 0.55;
-  const temperaturePenalty = Math.max(0, high - 2) * 2 + Math.max(0, -15 - high) * 2;
-  const thawPenalty = low < 0 && high > 3 && snow < 1 ? 8 : 0;
-  const rawScore = 74 + freshSnowBonus - rain * 3 - windPenalty - temperaturePenalty - thawPenalty;
-  const score = Math.max(0, Math.min(100, Math.round(rawScore)));
-  const rating = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Mixed' : 'Poor';
+function category(score){
+  return score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Mixed' : 'Poor';
+}
+function scoreTimeline(hourly){
+  const hours=[];
+  const skiDays=new Map();
+  let softSnow=0, wetness=0, crust=0, validHours=0;
+  for(const [i,time] of (hourly?.time || []).entries()){
+    const [temp,snow,rain,gust]=hourlyFields.map(field=>hourly[field]?.[i]);
+    if(![temp,snow,rain,gust].every(Number.isFinite)){
+      softSnow=wetness=crust=validHours=0;
+      continue;
+    }
+    // Recent snow settles over days. Wet surfaces refreeze and retain crust
+    // until it weathers away or is buried by accumulating new snow.
+    const thaw=Math.max(0,temp);
+    softSnow=Math.max(0, softSnow*0.993 + snow - thaw*0.09 - rain*0.6);
+    wetness=Math.min(15,wetness*0.97 + rain + thaw*0.16);
+    const freeze=temp<0 ? wetness*Math.min(0.5,-temp*0.05) : 0;
+    wetness-=freeze;
+    crust=Math.max(0,Math.min(20,crust*0.997 + freeze - snow*0.55 - thaw*0.03));
+    validHours++;
+    if(validHours<49) continue;
+    const depth=hourly.snow_depth?.[i]; // Open-Meteo reports metres of modeled natural snow.
+    const thinCover=Number.isFinite(depth) ? 28*Math.max(0,1-depth/0.30) : 0;
+    const surface=70 + Math.min(30,softSnow*1.3) - wetness - crust*1.8 - thinCover;
+    const weather=rain*3 + Math.max(0,gust-25)*0.55 + Math.max(0,temp-2)*2 + Math.max(0,-15-temp)*2;
+    hours[i]=Math.max(0,Math.min(100,Math.round(surface-weather)));
+    const hour=Number(time.slice(11,13));
+    if(hour>=9 && hour<16){
+      const date=time.slice(0,10);
+      if(!skiDays.has(date)) skiDays.set(date,[]);
+      skiDays.get(date).push(hours[i]);
+    }
+  }
+  const days=new Map();
+  for(const [date,scores] of skiDays){
+    if(scores.length===7) days.set(date,Math.round(scores.reduce((a,b)=>a+b,0)/7));
+  }
+  return {hours,days};
+}
+function dayConfidence([high,low,snow,rain],day){
   const uncertainty=day>=5?2:day>=2?1:0;
   const confidence=day>=10?'Very low':['High','Medium','Low'][Math.min(2,uncertainty+Number(high>=-1 && high<=2 && rain+snow>0))];
-  return {score,rating,confidence};
+  return confidence;
 }
-function showHours(hourly, date, day){
+function showHours(hourly, date, scores){
   const list = byId('hours');
   list.replaceChildren();
   (hourly?.time || []).forEach((time, index) => {
@@ -75,9 +111,9 @@ function showHours(hourly, date, day){
     clock.textContent = time.slice(11,16);
     row.append(clock);
     const values = hourlyFields.map(field => hourly[field]?.[index]);
-    if (values.every(Number.isFinite)) {
+    if (Number.isFinite(scores[index])) {
       const [temp,snow,rain,gust] = values;
-      const {score,rating} = rate([temp,temp,snow,rain,gust],day);
+      const score=scores[index], rating=category(score);
       const badge = document.createElement('span');
       badge.className = rating.toLowerCase();
       badge.textContent = score + '/100 · ' + rating;
@@ -120,8 +156,9 @@ async function render(){
       const cell=row.insertCell(), daily=data?.[l]?.daily;
       const index=daily?.time?.indexOf(date);
       const values=fields.map(f=>daily?.[f]?.[index]);
-      if(!values.every(Number.isFinite)){cell.textContent='Unavailable';return;}
-      const {score,rating,confidence}=rate(values,i);
+      const score=data?.[l]?.quality.days.get(date);
+      if(!Number.isFinite(score) || !values.every(Number.isFinite)){cell.textContent='Unavailable';return;}
+      const rating=category(score), confidence=dayConfidence(values,i);
       const btn=document.createElement('button');btn.textContent=score+'/100';
       btn.className=rating.toLowerCase();
       const category=document.createElement('small');category.textContent=rating;btn.append(category);
@@ -129,7 +166,7 @@ async function render(){
       btn.onclick=()=>{
         const dialog=byId('detail');dialog.querySelector('h2').textContent=m[0]+' · '+(l?'Summit':'Base');
         const [high,low,snow,rain,gust]=values;
-        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+low+' to '+high+' °C, '+snow+' cm of snowfall, '+rain+' mm of rain and peak gusts of '+gust+' km/h.';dialog.querySelector('h3').textContent='Hourly outlook · '+(m[5]?'Eastern':'Mountain')+' time';showHours(data[l].hourly,date,i);dialog.showModal();dialog.scrollTop=0;
+        dialog.querySelector('p').textContent=date+' · '+score+'/100 · '+rating+' · '+confidence+' confidence. '+low+' to '+high+' °C, '+snow+' cm of snowfall, '+rain+' mm of rain and peak gusts of '+gust+' km/h. Daily score averages 9 am through 3 pm local hourly scores, including recent snowfall, thaw and refreezing.';dialog.querySelector('h3').textContent='Hourly outlook · '+(m[5]?'Eastern':'Mountain')+' time';showHours(data[l].hourly,date,data[l].quality.hours);dialog.showModal();dialog.scrollTop=0;
       };cell.append(btn);
     }));
   }));
@@ -139,52 +176,36 @@ async function render(){
 }
 const states={VT:'Vermont',ME:'Maine',NH:'New Hampshire',NY:'New York',MA:'Massachusetts',PA:'Pennsylvania',CO:'Colorado'};
 const picker=byId('picker');
-const search=document.createElement('input');
-search.type='search';
-search.placeholder='Mountain or state';
-search.setAttribute('aria-label','Find a mountain by name or state');
-const results=document.createElement('div');
-const shortlist=document.createElement('div');
-picker.append(search,results,shortlist);
-function toggleMountain(name){
-  if(selected.has(name)) selected.delete(name);
-  else selected.add(name);
-  const url=new URL(location.href);
-  url.searchParams.set('mountains',[...selected].join(','));
-  history.replaceState(null,'',url);
-  search.value='';
-  updatePicker();
-  search.focus();
-  render();
+const summary=picker.parentElement.querySelector('summary');
+function updateCount(){
+  summary.textContent='Compare mountains ('+selected.size+')';
 }
-function choice(name,label){
-  const button=document.createElement('button');
-  button.type='button';
-  button.textContent=label;
-  button.style.margin='3px';
-  button.onclick=()=>toggleMountain(name);
-  return button;
-}
-function updatePicker(limit=6){
-  picker.parentElement.querySelector('summary').textContent='Compare mountains ('+selected.size+')';
-  shortlist.replaceChildren();
-  results.replaceChildren();
-  for(const name of selected) shortlist.append(choice(name,'Remove '+name+' ×'));
-  const normalize=value=>value.toLowerCase().replace(/[’']/g,'');
-  const query=normalize(search.value.trim());
-  if(!query)return;
-  const matches=mountains.filter(([name,,,,,state='CO'])=>
-    !selected.has(name) && normalize(name+' '+state+' '+states[state]).includes(query));
-  for(const [name,,,,,state='CO'] of matches.slice(0,limit)) results.append(choice(name,'+ '+name+' · '+state));
-  if(!matches.length) results.textContent='No additional mountains match.';
-  if(matches.length>limit){
-    const more=document.createElement('button');
-    more.textContent='Show more matches';
-    more.onclick=()=>updatePicker(limit+6);
-    results.append(more);
+for(const [code,state] of Object.entries(states)){
+  const group=document.createElement('details');
+  const heading=document.createElement('summary');
+  heading.textContent=state;
+  group.append(heading);
+  const resorts=mountains.filter(m=>(m[5] || 'CO')===code)
+    .sort((a,b)=>a[0].localeCompare(b[0]));
+  for(const [name] of resorts){
+    const label=document.createElement('label');
+    const box=document.createElement('input');
+    box.type='checkbox';
+    box.checked=selected.has(name);
+    box.onchange=()=>{
+      if(box.checked) selected.add(name);
+      else selected.delete(name);
+      const url=new URL(location.href);
+      url.searchParams.set('mountains',[...selected].join(','));
+      history.replaceState(null,'',url);
+      updateCount();
+      render();
+    };
+    label.append(box,' '+name);
+    group.append(label);
   }
+  picker.append(group);
 }
-search.oninput=()=>updatePicker();
-updatePicker();
+updateCount();
 byId('share').onclick=async()=>{try{await navigator.clipboard.writeText(location.href);byId('share').textContent='Link copied ✓';}catch{prompt('Copy your outlook link',location.href);}};
 render();
